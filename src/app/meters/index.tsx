@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { Alert, Image, Pressable, Switch, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import * as ImagePicker from 'expo-image-picker'
 import { Feather } from '@expo/vector-icons'
-import { api } from '../../api/client'
-import { uploadFile } from '../../api/files'
-import type { MeterRow, Property } from '../../api/types'
+import type { MeterRow } from '../../api/types'
+import { useUploadFileMutation } from '../../store/api/files'
+import { useAddReadingMutation, useGetMetersQuery } from '../../store/api/meters'
+import { useGetPropertiesQuery } from '../../store/api/properties'
+import { pickImage } from '../../utils/pickImage'
 import { useAction } from '../../hooks/useAction'
 import { useSettings } from '../../settings/SettingsProvider'
 import { Button } from '../../ui/Button'
@@ -24,6 +24,8 @@ const fmt = (n: number) => String(Math.round(n * 100) / 100)
 function ReadingSheet({ row, onClose, onDone }: { row: MeterRow; onClose: () => void; onDone: () => void }) {
   const { t, colors } = useSettings()
   const { busy, run } = useAction()
+  const [uploadFile] = useUploadFileMutation()
+  const [addReading] = useAddReadingMutation()
   const [value, setValue] = useState('')
   const [reset, setReset] = useState(false)
   const [photo, setPhoto] = useState<{ uri: string; mime: string } | null>(null)
@@ -34,23 +36,14 @@ function ReadingSheet({ row, onClose, onDone }: { row: MeterRow; onClose: () => 
   const valid = value.trim() !== '' && !Number.isNaN(num) && num >= 0 && !tooLow
 
   async function pick(camera: boolean) {
-    if (camera) {
-      const perm = await ImagePicker.requestCameraPermissionsAsync()
-      if (!perm.granted) return Alert.alert(t('error'), t('camDenied'))
-    }
-    const res = camera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.6 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.6 })
-    if (!res.canceled && res.assets[0]) setPhoto({ uri: res.assets[0].uri, mime: res.assets[0].mimeType ?? 'image/jpeg' })
+    const img = await pickImage(camera, () => Alert.alert(t('error'), t('camDenied')))
+    if (img) setPhoto(img)
   }
 
   async function submit() {
     const r = await run(async () => {
-      const key = photo ? (await uploadFile(photo.uri, 'meter', photo.mime)).key : undefined
-      return api(`/rooms/${row.room_id}/meter-readings`, {
-        method: 'POST',
-        body: { value: num, ...(reset ? { is_reset: true } : {}), ...(key ? { photo_key: key } : {}) },
-      })
+      const key = photo ? (await uploadFile({ uri: photo.uri, kind: 'meter', mime: photo.mime }).unwrap()).key : undefined
+      return addReading({ roomId: row.room_id, value: num, ...(reset ? { is_reset: true } : {}), ...(key ? { photo_key: key } : {}) }).unwrap()
     })
     if (r.ok) onDone()
   }
@@ -93,23 +86,18 @@ export default function Meters() {
   const { propertyId } = useLocalSearchParams<{ propertyId?: string }>()
   const { t, colors, errText } = useSettings()
   const router = useRouter()
-  const qc = useQueryClient()
   const [selected, setSelected] = useState<number | null>(propertyId ? Number(propertyId) : null)
   const [adding, setAdding] = useState<MeterRow | null>(null)
 
-  const props = useQuery({ queryKey: ['properties'], queryFn: () => api<Property[]>('/properties') })
+  const props = useGetPropertiesQuery()
   useEffect(() => {
     if (selected === null && props.data?.length) setSelected(props.data[0].id)
   }, [props.data, selected])
 
-  const q = useQuery({
-    queryKey: ['meters', selected],
-    queryFn: () => api<MeterRow[]>(`/properties/${selected}/meters`),
-    enabled: selected !== null,
-  })
+  const q = useGetMetersQuery(selected as number, { skip: selected === null })
 
   return (
-    <Screen title={t('metersT')} back refreshing={q.isRefetching} onRefresh={() => q.refetch()}>
+    <Screen title={t('metersT')} back refreshing={q.isFetching} onRefresh={() => q.refetch()}>
       {props.data && props.data.length > 1 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
           {props.data.map((p) => (
@@ -157,11 +145,7 @@ export default function Meters() {
         <ReadingSheet
           row={adding}
           onClose={() => setAdding(null)}
-          onDone={() => {
-            setAdding(null)
-            qc.invalidateQueries({ queryKey: ['meters'] })
-            qc.invalidateQueries({ queryKey: ['readings'] })
-          }}
+          onDone={() => setAdding(null)}
         />
       ) : null}
     </Screen>

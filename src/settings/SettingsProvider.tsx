@@ -4,7 +4,6 @@ import * as SecureStore from 'expo-secure-store'
 import { dark, light, type Colors } from '../theme/tokens'
 import { familyFor, type Weight } from '../theme/fonts'
 import { strings, type Key, type Lang } from '../i18n/strings'
-import { ApiError } from '../api/client'
 
 export type Mode = 'light' | 'dark' | 'system'
 
@@ -58,16 +57,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       if (vars) for (const k of Object.keys(vars)) s = s.replace(`{${k}}`, String(vars[k]))
       return s
     }
-    // Show a translated message when we have one for the error code, else the server's message
+    // Show a translated message when we have one for the error code, else the server's message.
+    // Works for ApiError and for the plain { status, code, message } objects RTK Query gives.
     const errText = (e: unknown) => {
-      if (e instanceof ApiError) {
-        const key = `err_${e.code}` as Key
-        // in English keep the server's own message for codes where it carries numbers or names
-        const keepServer = lang === 'en' && ['ROOM_EXISTS', 'UNIT_LIMIT', 'PROPERTY_LIMIT', 'READING_LOWER'].includes(e.code ?? '')
-        if (keepServer) return e.message
-        return (e.code && strings[lang][key]) || e.message
-      }
-      return e instanceof Error ? e.message : String(e)
+      const o = e as { message?: unknown; code?: unknown } | null
+      const code = typeof o?.code === 'string' ? o.code : undefined
+      const message = typeof o?.message === 'string' ? o.message : e instanceof Error ? e.message : String(e)
+      if (!code) return message
+      // in English keep the server's own message for codes where it carries numbers or names
+      const keepServer = lang === 'en' && ['ROOM_EXISTS', 'UNIT_LIMIT', 'PROPERTY_LIMIT', 'READING_LOWER'].includes(code)
+      if (keepServer) return message
+      return strings[lang][`err_${code}` as Key] || message
     }
     return {
       ready, lang, mode, isDark, colors: isDark ? dark : light, t, errText,

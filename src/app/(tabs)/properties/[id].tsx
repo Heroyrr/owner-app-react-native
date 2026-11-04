@@ -1,10 +1,9 @@
 import React, { useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Feather } from '@expo/vector-icons'
-import { api } from '../../../api/client'
-import type { CategoryInfo, PropertyDetail, RoomInfo } from '../../../api/types'
+import type { CategoryInfo, RoomInfo } from '../../../api/types'
+import { useDeleteCategoryMutation, useGetPropertyQuery } from '../../../store/api/properties'
 import { AddRoomSheet, CategorySheet, EditPropertySheet, RoomSheet } from '../../../features/properties/sheets'
 import { useAction } from '../../../hooks/useAction'
 import { useSettings } from '../../../settings/SettingsProvider'
@@ -36,21 +35,16 @@ export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { t, colors, errText } = useSettings()
   const router = useRouter()
-  const qc = useQueryClient()
   const { run } = useAction()
+  const [deleteCategory] = useDeleteCategoryMutation()
   const [sheet, setSheet] = useState<Sheet>(null)
 
-  const q = useQuery({ queryKey: ['property', id], queryFn: () => api<PropertyDetail>(`/properties/${id}`), enabled: !!id })
+  const q = useGetPropertyQuery(id, { skip: !id })
   const p = q.data
   const isBed = p?.type === 'BED'
 
-  const changed = () => {
-    qc.invalidateQueries({ queryKey: ['property', id] })
-    qc.invalidateQueries({ queryKey: ['properties'] })
-    qc.invalidateQueries({ queryKey: ['home'] })
-  }
   const close = () => setSheet(null)
-  const done = () => { changed(); close() }
+  const done = () => close() // lists refresh by themselves after every change
 
   const removeCategory = (cat: CategoryInfo) =>
     Alert.alert(cat.name, t('rmCatQ'), [
@@ -58,8 +52,7 @@ export default function PropertyDetailScreen() {
       {
         text: t('delete'), style: 'destructive',
         onPress: async () => {
-          const r = await run(() => api(`/categories/${cat.id}`, { method: 'DELETE' }))
-          if (r.ok) changed()
+          await run(() => deleteCategory(cat.id).unwrap())
         },
       },
     ])
@@ -73,7 +66,7 @@ export default function PropertyDetailScreen() {
       title={p?.name ?? t('props')}
       sub={p ? `${p.type === 'BED' ? t('bedT') : t('nonBedT')}${p.address ? ` · ${p.address}` : ''}` : undefined}
       back
-      refreshing={q.isRefetching}
+      refreshing={q.isFetching}
       onRefresh={() => q.refetch()}
     >
       {q.isLoading ? (
@@ -153,7 +146,7 @@ export default function PropertyDetailScreen() {
         <AddRoomSheet propertyId={p.id} categories={p.categories} presetCategoryId={sheet.catId} onClose={close} onDone={done} />
       ) : null}
       {p && roomData && roomSel ? (
-        <RoomSheet room={roomData} category={roomSel} propertyType={p.type} onClose={close} onDone={changed} />
+        <RoomSheet room={roomData} category={roomSel} propertyType={p.type} onClose={close} onDone={() => {}} />
       ) : null}
       {p && sheet?.kind === 'editProp' ? (
         <EditPropertySheet
@@ -162,8 +155,6 @@ export default function PropertyDetailScreen() {
           onDone={done}
           onDeleted={() => {
             close()
-            qc.invalidateQueries({ queryKey: ['properties'] })
-            qc.invalidateQueries({ queryKey: ['home'] })
             router.replace('/properties' as any)
           }}
         />

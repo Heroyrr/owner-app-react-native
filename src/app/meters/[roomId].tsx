@@ -1,12 +1,9 @@
 import React from 'react'
 import { Pressable, View } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
-import { useQuery } from '@tanstack/react-query'
 import { Feather } from '@expo/vector-icons'
-import { api } from '../../api/client'
-import { openFile } from '../../api/files'
-import type { Reading } from '../../api/types'
-import { useAction } from '../../hooks/useAction'
+import { useOpenFile } from '../../hooks/useOpenFile'
+import { useGetReadingsQuery } from '../../store/api/meters'
 import { useSettings } from '../../settings/SettingsProvider'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
@@ -24,11 +21,11 @@ const stamp = (iso: string) => {
 export default function ReadingHistory() {
   const { roomId, room } = useLocalSearchParams<{ roomId: string; room?: string }>()
   const { t, colors, errText } = useSettings()
-  const { run } = useAction()
-  const q = useQuery({ queryKey: ['readings', roomId], queryFn: () => api<Reading[]>(`/rooms/${roomId}/meter-readings`), enabled: !!roomId })
+  const { open } = useOpenFile()
+  const q = useGetReadingsQuery(roomId, { skip: !roomId })
 
   return (
-    <Screen title={`${t('history')}${room ? ` · ${room}` : ''}`} sub={t('metersT')} back refreshing={q.isRefetching} onRefresh={() => q.refetch()}>
+    <Screen title={`${t('history')}${room ? ` · ${room}` : ''}`} sub={t('metersT')} back refreshing={q.isFetching} onRefresh={() => q.refetch()}>
       {q.isLoading ? (
         <T color={colors.muted} style={{ textAlign: 'center', marginTop: 40 }}>{t('loading')}</T>
       ) : q.isError ? (
@@ -52,7 +49,7 @@ export default function ReadingHistory() {
                 </View>
                 {r.is_reset ? <Badge label={t('resetBadge')} tone="amber" /> : null}
                 {r.photo_key ? (
-                  <Pressable onPress={() => run(() => openFile(r.photo_key as string))} hitSlop={8} accessibilityLabel={t('openPhoto')}>
+                  <Pressable onPress={() => open(r.photo_key as string)} hitSlop={8} accessibilityLabel={t('openPhoto')}>
                     <Feather name="image" size={22} color={colors.pri} />
                   </Pressable>
                 ) : null}

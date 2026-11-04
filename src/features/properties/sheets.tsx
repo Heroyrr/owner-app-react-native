@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { api } from '../../api/client'
+import {
+  useAddBedMutation, useAddCategoryMutation, useAddPropertyMutation, useAddRoomMutation, useDeleteBedMutation,
+  useDeletePropertyMutation, useDeleteRoomMutation, useUpdateCategoryMutation, useUpdatePropertyMutation,
+} from '../../store/api/properties'
 import type { CategoryInfo, RoomInfo } from '../../api/types'
 import { useAction } from '../../hooks/useAction'
 import { useSettings } from '../../settings/SettingsProvider'
@@ -28,6 +31,8 @@ function confirm(title: string, message: string | undefined, yes: string, no: st
 export function AddPropertySheet({ onClose, onDone }: { onClose: () => void; onDone: (propertyId: number) => void }) {
   const { t, colors, errText } = useSettings()
   const { busy, run } = useAction()
+  const [addProperty] = useAddPropertyMutation()
+  const [addCategory] = useAddCategoryMutation()
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [type, setType] = useState<PType>('NON_BED')
@@ -43,17 +48,14 @@ export function AddPropertySheet({ onClose, onDone }: { onClose: () => void; onD
 
   async function submit() {
     const r = await run(async () => {
-      const prop = await api<{ id: number }>('/properties', {
-        method: 'POST',
-        body: { name: name.trim(), type, ...(address.trim() ? { address: address.trim() } : {}) },
-      })
+      const prop = await addProperty({ name: name.trim(), type, ...(address.trim() ? { address: address.trim() } : {}) }).unwrap()
       let catError = ''
       if (wantCat) {
         try {
-          await api(`/properties/${prop.id}/categories`, {
-            method: 'POST',
-            body: { name: catName.trim(), rent: Number(rent), rooms: rooms.trim(), ...(type === 'BED' ? { beds_per_room: Number(beds) } : {}) },
-          })
+          await addCategory({
+            propertyId: prop.id, name: catName.trim(), rent: Number(rent), rooms: rooms.trim(),
+            ...(type === 'BED' ? { beds_per_room: Number(beds) } : {}),
+          }).unwrap()
         } catch (e) {
           catError = errText(e)
         }
@@ -96,6 +98,8 @@ export function CategorySheet({
 }: { propertyId: number; propertyType: PType; category?: CategoryInfo; onClose: () => void; onDone: () => void }) {
   const { t, colors } = useSettings()
   const { busy, run } = useAction()
+  const [addCategory] = useAddCategoryMutation()
+  const [updateCategory] = useUpdateCategoryMutation()
   const [name, setName] = useState(category?.name ?? '')
   const [rent, setRent] = useState(category ? String(category.rent) : '')
   const [beds, setBeds] = useState('3')
@@ -107,11 +111,11 @@ export function CategorySheet({
   async function submit() {
     const r = await run(() =>
       category
-        ? api(`/categories/${category.id}`, { method: 'PATCH', body: { name: name.trim(), rent: Number(rent) } })
-        : api(`/properties/${propertyId}/categories`, {
-            method: 'POST',
-            body: { name: name.trim(), rent: Number(rent), rooms: rooms.trim(), ...(propertyType === 'BED' ? { beds_per_room: Number(beds) } : {}) },
-          })
+        ? updateCategory({ id: category.id, name: name.trim(), rent: Number(rent) }).unwrap()
+        : addCategory({
+            propertyId, name: name.trim(), rent: Number(rent), rooms: rooms.trim(),
+            ...(propertyType === 'BED' ? { beds_per_room: Number(beds) } : {}),
+          }).unwrap()
     )
     if (r.ok) onDone()
   }
@@ -140,14 +144,13 @@ export function AddRoomSheet({
 }: { propertyId: number; categories: CategoryInfo[]; presetCategoryId?: number; onClose: () => void; onDone: () => void }) {
   const { t, colors } = useSettings()
   const { busy, run } = useAction()
+  const [addRoom] = useAddRoomMutation()
   const [catId, setCatId] = useState<number | undefined>(presetCategoryId ?? categories[0]?.id)
   const [roomNo, setRoomNo] = useState('')
   const valid = !!catId && roomNo.trim() !== ''
 
   async function submit() {
-    const r = await run(() =>
-      api(`/properties/${propertyId}/rooms`, { method: 'POST', body: { category_id: catId, room_no: roomNo.trim() } })
-    )
+    const r = await run(() => addRoom({ propertyId, category_id: catId as number, room_no: roomNo.trim() }).unwrap())
     if (r.ok) onDone()
   }
 
@@ -171,19 +174,22 @@ export function RoomSheet({
 }: { room: RoomInfo; category: CategoryInfo; propertyType: PType; onClose: () => void; onDone: () => void }) {
   const { t, colors } = useSettings()
   const { busy, run } = useAction()
+  const [deleteRoom] = useDeleteRoomMutation()
+  const [deleteBed] = useDeleteBedMutation()
+  const [addBedTo] = useAddBedMutation()
 
   const removeRoom = () =>
     confirm(t('rmRoom'), t('rmRoomQ'), t('delete'), t('cancel'), async () => {
-      const r = await run(() => api(`/rooms/${room.id}`, { method: 'DELETE' }))
+      const r = await run(() => deleteRoom(room.id).unwrap())
       if (r.ok) { onDone(); onClose() }
     })
   const removeBed = (bedId: number) =>
     confirm(t('bed'), t('rmBedQ'), t('delete'), t('cancel'), async () => {
-      const r = await run(() => api(`/beds/${bedId}`, { method: 'DELETE' }))
+      const r = await run(() => deleteBed(bedId).unwrap())
       if (r.ok) onDone()
     })
   const addBed = async () => {
-    const r = await run(() => api(`/rooms/${room.id}/beds`, { method: 'POST' }))
+    const r = await run(() => addBedTo(room.id).unwrap())
     if (r.ok) onDone()
   }
 
@@ -229,11 +235,13 @@ export function EditPropertySheet({
 }: { property: { id: number; name: string; address: string | null }; onClose: () => void; onDone: () => void; onDeleted: () => void }) {
   const { t } = useSettings()
   const { busy, run } = useAction()
+  const [updateProperty] = useUpdatePropertyMutation()
+  const [deleteProperty] = useDeletePropertyMutation()
   const [name, setName] = useState(property.name)
   const [address, setAddress] = useState(property.address ?? '')
 
   async function submit() {
-    const r = await run(() => api(`/properties/${property.id}`, { method: 'PATCH', body: { name: name.trim(), address: address.trim() } }))
+    const r = await run(() => updateProperty({ id: property.id, name: name.trim(), address: address.trim() }).unwrap())
     if (r.ok) onDone()
   }
 
@@ -241,7 +249,7 @@ export function EditPropertySheet({
   const del = () =>
     confirm(t('delPropQ1'), property.name, t('delete'), t('cancel'), () =>
       confirm(t('delProp'), t('delPropQ2'), t('delete'), t('cancel'), async () => {
-        const r = await run(() => api(`/properties/${property.id}`, { method: 'DELETE', query: { confirm: 'true' } }))
+        const r = await run(() => deleteProperty(property.id).unwrap())
         if (r.ok) onDeleted()
       })
     )

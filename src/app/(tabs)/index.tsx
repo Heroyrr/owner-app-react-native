@@ -1,10 +1,8 @@
 import React from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useQuery } from '@tanstack/react-query'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
-import { api } from '../../api/client'
-import type { HomeData } from '../../api/types'
+import { useGetHomeQuery } from '../../store/api/home'
 import { useAuth } from '../../auth/AuthProvider'
 import { useSettings } from '../../settings/SettingsProvider'
 import { Screen } from '../../ui/Screen'
@@ -37,16 +35,17 @@ export default function Home() {
   const router = useRouter()
   const openQuick = (key: Key) => {
     if (key === 'q2') router.push('/meters' as any)
+    else if (key === 'q3') router.push('/tenants/new?reserve=1' as any)
     else Alert.alert(t(key), t('soon'))
   }
-  const q = useQuery({ queryKey: ['home'], queryFn: () => api<HomeData>('/home') })
+  const q = useGetHomeQuery()
   const d = q.data
 
   return (
     <Screen
       title={`${t('hello')}${user ? `, ${user.name}` : ''}`}
       sub={t('home')}
-      refreshing={q.isRefetching}
+      refreshing={q.isFetching}
       onRefresh={() => q.refetch()}
     >
       {q.isLoading ? (

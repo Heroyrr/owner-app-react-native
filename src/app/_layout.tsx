@@ -4,14 +4,14 @@ import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { Provider } from 'react-redux'
+import { store, useAppDispatch } from '../store'
+import { baseApi } from '../store/baseApi'
 import { SettingsProvider, useSettings } from '../settings/SettingsProvider'
 import { AuthProvider, useAuth } from '../auth/AuthProvider'
 import { fontAssets } from '../theme/fonts'
 
 SplashScreen.preventAutoHideAsync()
-
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 15_000 } } })
 
 /** Waits for fonts, saved settings and the saved login, then sends the user to login or the app */
 function Gate() {
@@ -20,7 +20,7 @@ function Gate() {
   const [fontsLoaded] = useFonts(fontAssets)
   const segments = useSegments()
   const router = useRouter()
-  const qc = useQueryClient()
+  const dispatch = useAppDispatch()
   const appReady = fontsLoaded && ready && status !== 'loading'
 
   useEffect(() => {
@@ -31,7 +31,7 @@ function Gate() {
     if (!appReady) return
     const inAuth = segments[0] === '(auth)'
     if (status === 'out') {
-      qc.clear() // forget the previous owner's data
+      dispatch(baseApi.util.resetApiState()) // forget the previous owner's data
       if (!inAuth) router.replace('/(auth)/login' as any)
     } else if (status === 'in' && inAuth) {
       router.replace('/(tabs)' as any)
@@ -50,13 +50,13 @@ function Gate() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <SettingsProvider>
-        <AuthProvider>
-          <QueryClientProvider client={queryClient}>
+      <Provider store={store}>
+        <SettingsProvider>
+          <AuthProvider>
             <Gate />
-          </QueryClientProvider>
-        </AuthProvider>
-      </SettingsProvider>
+          </AuthProvider>
+        </SettingsProvider>
+      </Provider>
     </SafeAreaProvider>
   )
 }

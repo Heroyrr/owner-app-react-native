@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../../../api/client'
-import type { BalanceRow, Property } from '../../../api/types'
+import { useGetBalancesQuery } from '../../../store/api/billing'
+import { useGetPropertiesQuery } from '../../../store/api/properties'
 import { AddPropertySheet } from '../../../features/properties/sheets'
 import { useSettings } from '../../../settings/SettingsProvider'
 import { Badge } from '../../../ui/Badge'
@@ -19,12 +18,11 @@ import { inr } from '../../../utils/format'
 export default function PropertiesList() {
   const { t, colors, errText } = useSettings()
   const router = useRouter()
-  const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
 
-  const q = useQuery({ queryKey: ['properties'], queryFn: () => api<Property[]>('/properties') })
+  const q = useGetPropertiesQuery()
   // Dues per property come from the balances list (one row per booking)
-  const dues = useQuery({ queryKey: ['balances', 'due'], queryFn: () => api<BalanceRow[]>('/balances', { query: { due: 'true' } }) })
+  const dues = useGetBalancesQuery({ due: 'true' })
   const dueBy = useMemo(() => {
     const m: Record<number, number> = {}
     for (const r of dues.data ?? []) m[r.property_id] = (m[r.property_id] ?? 0) + r.balance
@@ -37,7 +35,7 @@ export default function PropertiesList() {
   return (
     <Screen
       title={t('props')}
-      refreshing={q.isRefetching}
+      refreshing={q.isFetching}
       onRefresh={refresh}
       fab={<Fab onPress={() => setAdding(true)} />}
     >
@@ -95,8 +93,6 @@ export default function PropertiesList() {
           onClose={() => setAdding(false)}
           onDone={(id) => {
             setAdding(false)
-            qc.invalidateQueries({ queryKey: ['properties'] })
-            qc.invalidateQueries({ queryKey: ['home'] })
             open(id)
           }}
         />

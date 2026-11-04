@@ -48,3 +48,70 @@ export type Reading = { id: number; room_id: number; value: number; is_reset: bo
 export type MeterRow = { room_id: number; room_no: string; latest: Reading | null; previous: Reading | null; units_used: number | null }
 
 export type BalanceRow = { booking_id: number; property_id: number; balance: number }
+
+/* ---------------- tenants and bookings ---------------- */
+export type DocKind = 'aadhaar_front' | 'aadhaar_back' | 'other_id'
+export type Doc = { id: number; tenant_id: number; kind: DocKind; file_key: string; mime_type: string }
+
+export type BookingStatus = 'reserved' | 'active' | 'notice' | 'moved_out'
+
+export type BookingFull = {
+  id: number
+  tenant_id: number
+  property_id: number
+  room_id: number
+  bed_id: number | null
+  start_date: string
+  end_date: string | null
+  status: BookingStatus
+  notice_date: string | null
+  leave_date: string | null
+  out_date: string | null
+  deposit: number
+  advance: number
+  written_off: number
+  settle_mode: string | null
+  agreement_file_key: string | null
+  balance: number
+  tenant?: { id: number; name: string; phone: string | null }
+  property?: { id: number; name: string; type?: 'BED' | 'NON_BED' }
+  room?: { id: number; room_no: string }
+  bed?: { id: number; label: string } | null
+}
+
+export type BookingSummary = { invoiced: number; paid: number; advance: number; written_off: number; balance: number }
+export type BookingDetail = BookingFull & { summary: BookingSummary }
+
+export type LiveSummary = {
+  id: number
+  status: BookingStatus
+  property_name?: string
+  room_no?: string
+  bed_label: string | null
+  balance: number
+  agreement_done: boolean
+}
+export type TenantRow = {
+  id: number
+  name: string
+  phone: string | null
+  photo_key: string | null
+  ekyc_done: boolean
+  documents: Doc[]
+  live_bookings: LiveSummary[]
+  bookings_count: number
+  total_balance: number
+}
+export type TenantDetail = {
+  id: number
+  name: string
+  phone: string | null
+  photo_key: string | null
+  ekyc_done: boolean
+  documents: Doc[]
+  bookings: BookingFull[]
+}
+
+export type LedgerInvoice = { id: number; number: string; period_start: string; period_end: string; total: number; paid: number; cancelled: boolean }
+export type LedgerPayment = { id: number; mode: string; amount: number; ref_no: string | null; paid_on: string }
+export type Ledger = { summary: BookingSummary; invoices: LedgerInvoice[]; payments: LedgerPayment[] }
